@@ -1,0 +1,37 @@
+---
+description: Always propose Razorpay-scale (millions TPS-class) options for ReviveAgent
+alwaysApply: true
+---
+
+# Razorpay-Scale Product Thinking
+
+ReviveAgent is a **hiring demo for Razorpay AI Builder**, aimed at Track 3 revenue recovery — a gap they still run largely by hand. Design like it could sit next to Checkout / Payment Links volume, not a toy script.
+
+**Razorpay AI Builder bar:** Scale suggestions must still be things an **AI Builder** would own — agent orchestration, recovery pipelines, evaluation loops — not random infra for its own sake. Always ask: would this impress someone hiring for AI Builders?
+
+## When the user asks for a feature, change, or “what next”
+
+Always include a short **Scale Options** block with **at least 3 tiers**:
+
+1. **Demo-now** — what we ship in this repo this week (correct + explainable)
+2. **Merchant-scale** — ~10³–10⁵ recoveries/day (queue workers, idempotency, webhooks)
+3. **Razorpay-scale** — bursty India traffic (UPI peaks): partitions, backpressure, multi-region, SLOs
+
+Prefer concrete tech that Razorpay engineers recognize, e.g.:
+
+- Ingest: Razorpay webhooks → Kafka/SQS → consumers (never sync LLM on the webhook path)
+- Agents: LangGraph async workers; classify with rules/ML first; LLM only for draft/reasoning
+- State: Postgres for truth + Redis for hot locks/rate limits; outcome warehouse (ClickHouse/BigQuery) for learning
+- Idempotency: `payment_id` + `recovery_attempt` unique keys; exactly-once *effects* for messages
+- Comms: WhatsApp/SMS providers with templates, quiet hours, DNC, send receipts
+- Delay/retry: Celery/SQS delay queues + bank health signals — not request-thread sleeps
+- Observability: traces per `run_id`, metrics (recovery_rate, time_to_recover, $ recovered), Agent Trace exportable
+- Safety: kill switches, merchant config, escalation caps, PCI/PII minimization
+
+## Non-goals for the demo
+
+Do not pretend the local Docker stack *is* billions of txns. Show the **architecture path** from demo → scale so reviewers see judgment.
+
+## Money & load truth
+
+Amounts stay **paise (int)**. Assume failure rates of a few percent of enormous volume = enormous recovery opportunity — every design choice should protect **latency, cost per recovery, and explainability**.

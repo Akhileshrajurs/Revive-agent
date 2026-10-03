@@ -1,0 +1,28 @@
+---
+description: Zero unnecessary latency — every ms counts in ReviveAgent
+alwaysApply: true
+---
+
+# Performance — No Unnecessary Delays
+
+This is a payments recovery pipeline. **Even a millisecond of avoidable wait is a bug.**
+
+## Never
+
+- `time.sleep`, busy-wait, or “demo pauses” in request/agent paths
+- Sync LLM / Gemini on the hot path when rules already decided the strategy
+- Re-run Outcome Evaluator when the path is `delay_and_retry` (Celery owns that later)
+- Extra DB round-trips, N+1 queries, or loading unused history
+- Blocking the webhook/API thread on long work — queue it (Celery/SQS)
+
+## Always
+
+- Prefer rules → structured state → optional LLM for copy/reasoning only
+- LangGraph conditional edges to **skip** nodes that don’t apply (don’t compute then discard)
+- Timeouts on every network call; fail fast
+- Measure `latency_ms` per agent for Trace — optimize what the Trace shows is slow
+- Idempotent short paths: same `payment_id` must not redo expensive work
+
+## When proposing features
+
+Call out **latency cost**. Pick the design that preserves p99 recovery-decision latency.

@@ -1,0 +1,33 @@
+---
+description: React dashboard & Agent Trace View standards
+globs: "frontend/**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# Frontend Dashboard
+
+**Razorpay AI Builder bar:** The UI exists so reviewers *see* the agentic loop. **Agent Trace** is the hire signal — show decisions + reasoning, not just green/red status. Build the dashboard they’d expect from someone who owns full-loop AI products.
+
+## Priority views
+
+1. Hire-me scroll landing — hero → loop → strategies → delay → live console → scale (mobile + desktop)
+2. Live Recovery Feed — status color, clickable rows
+3. Agent Trace View — full LangGraph node decisions + LLM reasoning (demo-critical)
+4. Recovery Funnel (Recharts)
+5. Strategy Performance table
+
+## UX for fintech reviewers
+
+- Dark hire-me storytelling first; Product proof in Live Console
+- Show money as ₹ with correct formatting from paise
+- Every recovery row must deep-link to its agent trace
+- Hover/click should teach the system (agent nodes, strategy cards) without a verbal tour
+- Loading / empty / error states; never blank tables that look "broken"
+- Prefer clarity over decoration; engineers read the console under time pressure
+
+## Code
+
+- React + TypeScript; typed API clients matching backend schemas
+- Colocate view components under `components/` (landing sections + RecoveryFeed, AgentTrace, etc.)
+- Do not hide reasoning behind icons — show strategy reasoning text in the trace
+- Poll live APIs only when the console section is visible (IntersectionObserver)
