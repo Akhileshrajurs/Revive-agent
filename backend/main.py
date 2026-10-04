@@ -386,7 +386,7 @@ async def recover_from_razorpay(payment_id: str, db: AsyncSession = Depends(get_
         payment_id=payment.get("id", payment_id),
         order_id=payment.get("order_id"),
         customer_id=payment.get("customer_id"),
-        amount_paise=int(payment.get("amount") or 0) or 100,
+        amount_paise=int(payment.get("amount") or 0),
         currency=payment.get("currency") or "INR",
         method=payment.get("method"),
         error_code=payment.get("error_code"),
@@ -404,6 +404,7 @@ async def recover_from_razorpay(payment_id: str, db: AsyncSession = Depends(get_
 async def razorpay_webhook(
     request: Request,
     x_razorpay_signature: str = Header(None),
+    db: AsyncSession = Depends(get_db),
 ):
     body = await request.body()
 
@@ -431,19 +432,30 @@ async def razorpay_webhook(
         )
 
     payload = json.loads(body)
-
     event = payload.get("event")
 
     print(f"Razorpay webhook received: {event}")
 
     if event == "payment.failed":
-        payment = payload.get("payload", {}).get("payment", {}).get("entity", {})
+        payment = (
+            payload
+            .get("payload", {})
+            .get("payment", {})
+            .get("entity", {})
+        )
 
         payment_id = payment.get("id")
 
         print(f"Payment failed: {payment_id}")
 
-        # TODO:
-        # enqueue your recovery job here
+        if not payment_id:
+            raise HTTPException(
+                status_code=400,
+                detail="payment.failed webhook missing payment ID",
+            )
+
+        result = await recover_from_razorpay(payment_id, db)
+
+        print(f"ReviveAgent recovery triggered for {payment_id}")
 
     return {"status": "ok"}
