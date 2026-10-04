@@ -6,7 +6,8 @@ import structlog
 import hashlib
 import hmac
 import json
-from fastapi import Depends, FastAPI, HTTPException, Request
+import os
+from fastapi import Depends, FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import func, select
