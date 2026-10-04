@@ -3,7 +3,10 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import structlog
-from fastapi import Depends, FastAPI, HTTPException
+import hashlib
+import hmac
+import json
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import func, select
@@ -395,3 +398,51 @@ async def recover_from_razorpay(payment_id: str, db: AsyncSession = Depends(get_
         contact=payment.get("contact"),
     )
     return await start_recovery(body, db)
+
+@app.post("/api/v1/webhooks/razorpay")
+async def razorpay_webhook(
+    request: Request,
+    x_razorpay_signature: str = Header(None),
+):
+    body = await request.body()
+
+    webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+
+    if not webhook_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="RAZORPAY_WEBHOOK_SECRET is not configured",
+        )
+
+    expected_signature = hmac.new(
+        webhook_secret.encode(),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(
+        expected_signature,
+        x_razorpay_signature or "",
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Razorpay webhook signature",
+        )
+
+    payload = json.loads(body)
+
+    event = payload.get("event")
+
+    print(f"Razorpay webhook received: {event}")
+
+    if event == "payment.failed":
+        payment = payload.get("payload", {}).get("payment", {}).get("entity", {})
+
+        payment_id = payment.get("id")
+
+        print(f"Payment failed: {payment_id}")
+
+        # TODO:
+        # enqueue your recovery job here
+
+    return {"status": "ok"}
