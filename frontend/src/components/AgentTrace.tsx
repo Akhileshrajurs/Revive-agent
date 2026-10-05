@@ -4,6 +4,7 @@ import { api, formatInr, type TraceResponse } from "../api";
 type Props = { runId: string | null };
 
 const AGENT_LABEL: Record<string, string> = {
+  webhook_ingest: "0 · Webhook Ingest",
   failure_classifier: "1 · Failure Classifier",
   customer_profiler: "2 · Customer Profiler",
   strategy_planner: "3 · Strategy Planner",

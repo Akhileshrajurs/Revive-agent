@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import structlog
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
@@ -33,6 +33,12 @@ from models.schemas import (
     StrategyPerformanceOut,
 )
 from razorpay_client.client import get_razorpay_client
+from razorpay_client.webhook import (
+    extract_payment_failed_entity,
+    parse_webhook_event,
+    payment_entity_to_failed_payment,
+    verify_razorpay_signature,
+)
 from tasks.retry_scheduler import schedule_delayed_retry
 
 log = structlog.get_logger()
@@ -47,6 +53,7 @@ async def lifespan(_app: FastAPI):
         "startup",
         env=settings.app_env,
         payment_client=mode,
+        razorpay_webhook=bool(settings.razorpay_webhook_secret),
         llm_provider=settings.llm_provider,
         gemini=settings.gemini_configured,
         llm_draft_enabled=settings.llm_draft_enabled,
@@ -95,6 +102,7 @@ async def health():
     return {
         "status": "ok",
         "razorpay": "configured" if settings.razorpay_configured else "mock",
+        "razorpay_webhook": "configured" if bool(settings.razorpay_webhook_secret) else "missing",
         "llm_provider": settings.llm_provider,
         "gemini": "configured" if settings.gemini_configured else "missing",
         "llm_draft_enabled": settings.llm_draft_enabled,
@@ -480,6 +488,7 @@ async def strategy_performance(db: AsyncSession = Depends(get_db)):
 
 @app.post("/api/v1/recoveries/from-razorpay/{payment_id}", response_model=ClassifyResponse)
 async def recover_from_razorpay(payment_id: str, db: AsyncSession = Depends(get_db)):
+    """Fetch a payment from Razorpay Test API and run recovery (manual / debug path)."""
     client = get_razorpay_client()
     try:
         payment = client.fetch_payment(payment_id)
@@ -487,20 +496,101 @@ async def recover_from_razorpay(payment_id: str, db: AsyncSession = Depends(get_
         log.error("razorpay_fetch_failed", payment_id=payment_id, error=str(exc))
         raise HTTPException(status_code=502, detail=f"Razorpay fetch failed: {exc}") from exc
 
-    body = FailedPaymentIn(
-        payment_id=payment.get("id", payment_id),
-        order_id=payment.get("order_id"),
-        customer_id=payment.get("customer_id"),
-        amount_paise=int(payment.get("amount") or 0) or 100,
-        currency=payment.get("currency") or "INR",
-        method=payment.get("method"),
-        error_code=payment.get("error_code"),
-        error_description=payment.get("error_description"),
-        error_source=payment.get("error_source"),
-        error_step=payment.get("error_step"),
-        error_reason=payment.get("error_reason"),
-        customer_name=(payment.get("notes") or {}).get("customer_name") or "Customer",
-        email=payment.get("email"),
-        contact=payment.get("contact"),
-    )
+    body = payment_entity_to_failed_payment(payment, payment_id_fallback=payment_id)
     return await start_recovery(body, db)
+
+
+async def _prepend_ingest_trace(
+    db: AsyncSession,
+    *,
+    run_id: UUID,
+    source: str,
+    event: str,
+    payment_id: str,
+    signature_ok: bool,
+) -> None:
+    """Attach an ingest step at the front of Agent Trace (audit: how the run started)."""
+    run = await db.get(RecoveryRun, run_id)
+    if run is None:
+        return
+    steps = list((run.agent_trace or {}).get("steps") or [])
+    if steps and isinstance(steps[0], dict) and steps[0].get("agent") == "webhook_ingest":
+        return
+    steps.insert(
+        0,
+        {
+            "agent": "webhook_ingest",
+            "status": "ok",
+            "output": {
+                "source": source,
+                "event": event,
+                "payment_id": payment_id,
+                "signature_verified": signature_ok,
+            },
+            "reasoning": (
+                f"Ingested via {source} ({event}); HMAC signature verified; "
+                "pipeline started for this payment_id."
+            ),
+            "latency_ms": 0,
+        },
+    )
+    run.agent_trace = {"steps": steps}
+    flag_modified(run, "agent_trace")
+
+
+@app.post("/api/v1/webhooks/razorpay")
+async def razorpay_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    x_razorpay_signature: str | None = Header(default=None, alias="X-Razorpay-Signature"),
+):
+    """Razorpay `payment.failed` → recovery pipeline.
+
+    - HMAC verify with RAZORPAY_WEBHOOK_SECRET (fail closed)
+    - Idempotent on payment_id (duplicate deliveries → same run)
+    - Never invents amount_paise
+    - Returns 200 quickly with run_id for dashboard/Trace
+    """
+    body = await request.body()
+    verify_razorpay_signature(
+        body=body,
+        signature=x_razorpay_signature,
+        secret=settings.razorpay_webhook_secret,
+    )
+    payload = parse_webhook_event(body)
+    event = str(payload.get("event") or "")
+
+    entity = extract_payment_failed_entity(payload)
+    if entity is None:
+        log.info("razorpay_webhook_ignored", event=event)
+        return {"status": "ok", "event": event, "handled": False}
+
+    failed = payment_entity_to_failed_payment(entity)
+    log.info(
+        "razorpay_webhook_payment_failed",
+        payment_id=failed.payment_id,
+        amount_paise=failed.amount_paise,
+        method=failed.method,
+        error_reason=failed.error_reason,
+    )
+
+    result = await start_recovery(failed, db)
+    if not result.idempotent_replay:
+        await _prepend_ingest_trace(
+            db,
+            run_id=result.run_id,
+            source="razorpay_webhook",
+            event=event,
+            payment_id=failed.payment_id,
+            signature_ok=True,
+        )
+
+    return {
+        "status": "ok",
+        "event": event,
+        "handled": True,
+        "payment_id": failed.payment_id,
+        "run_id": str(result.run_id),
+        "recovery_status": result.status.value,
+        "idempotent_replay": result.idempotent_replay,
+    }

@@ -22,7 +22,7 @@ ReviveAgent recovers failed Razorpay payments via a multi-agent loop: **Perceive
 | Agents | `backend/agents/` | Classifier, profiler, **rules-only** strategy planner, comms drafter (≤1 Gemini), outcome evaluator |
 | Policy | `backend/policy/engine.py` | Deterministic guard: max retries, DNC, quiet hours, permanent-rail no-retry |
 | LLM | `backend/llm/gemini_client.py` | Optional draft-only Gemini; hard timeout; `LLM_DRAFT_ENABLED` |
-| Payments | `backend/razorpay_client/client.py` | Real test-mode client or mock when keys absent |
+| Payments | `backend/razorpay_client/` | Test-mode client + `webhook.py` HMAC + `payment.failed` → recovery |
 | Async work | `backend/tasks/retry_scheduler.py` | Celery/Redis delayed retries (not the sync classify path) |
 | Local sim | `scripts/simulate_failures.py` | Smoke failed-payment events into the API |
 | Evals | `backend/evals/` | Replay + ablation + policy proofs (simulator); `scripts/prove_idempotency.py` for API |
@@ -68,6 +68,12 @@ cd frontend && npm install && npm run dev
 ## Changelog
 
 Newest first. Main / owning changes only.
+
+### 2026-10-06 — Razorpay `payment.failed` webhook restored (HMAC + idempotent)
+
+- **What:** `POST /api/v1/webhooks/razorpay` verifies `X-Razorpay-Signature`, handles `payment.failed`, maps entity → `FailedPaymentIn` (no invented amounts), runs recovery (idempotent on `payment_id`), prepends `webhook_ingest` Trace step. Shared mapper used by `/from-razorpay/{id}`. Proof script `scripts/prove_webhook.py`.
+- **Why it matters:** Live test-mode failures can auto-ingest; duplicate deliveries cannot double-act; reviewers see ingest in Agent Trace.
+- **Paths:** `backend/razorpay_client/webhook.py`, `backend/main.py`, `backend/config.py`, `scripts/prove_webhook.py`, `frontend/src/components/AgentTrace.tsx`
 
 ### 2026-10-05 — Phase 2: policy guard + idempotency + ablation
 

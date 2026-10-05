@@ -75,6 +75,19 @@ python3 scripts/prove_idempotency.py http://localhost:9000
 
 5× POST same `payment_id` → **1** `run_id`. First `idempotent_replay=false`, rest `true`. No second Celery schedule.
 
+### Live ingest — Razorpay webhook
+
+```bash
+# Razorpay Dashboard → Webhooks → URL:
+#   https://YOUR-RENDER.onrender.com/api/v1/webhooks/razorpay
+# Active events: payment.failed
+# Set RAZORPAY_WEBHOOK_SECRET on Render to the webhook signing secret
+
+python3 scripts/prove_webhook.py http://localhost:9000
+```
+
+HMAC reject (401) + `payment.failed` → recovery + duplicate → same `run_id`. Agent Trace shows **Webhook Ingest**.
+
 ---
 
 ## Architecture
