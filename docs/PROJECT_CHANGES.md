@@ -19,7 +19,8 @@ ReviveAgent recovers failed Razorpay payments via a multi-agent loop: **Perceive
 | Contracts | `backend/models/schemas.py` | Pydantic enums + I/O: `FailureType`, `RecoveryStrategy`, `RecoveryStatus`, `FailedPaymentIn`, agent outputs |
 | Persistence | `backend/db/models.py`, `backend/db/database.py` | SQLAlchemy `RecoveryRun`, `StrategyPerformance`; async Postgres session |
 | Graph | `backend/graph/recovery_graph.py` | LangGraph `RecoveryState`; Day-1 classify-only graph (`failure_classifier` → END) |
-| Agents | `backend/agents/` | One module per agent: classifier, profiler, strategy planner, comms drafter, outcome evaluator |
+| Agents | `backend/agents/` | Classifier, profiler, **rules-only** strategy planner, comms drafter (≤1 Gemini), outcome evaluator |
+| LLM | `backend/llm/gemini_client.py` | Optional draft-only Gemini; instant fallback on 429; `LLM_DRAFT_ENABLED` |
 | Payments | `backend/razorpay_client/client.py` | Real test-mode client or mock when keys absent |
 | Async work | `backend/tasks/retry_scheduler.py` | Celery/Redis delayed retries (not the sync classify path) |
 | Local sim | `scripts/simulate_failures.py` | Smoke failed-payment events into the API |
@@ -65,6 +66,12 @@ cd frontend && npm install && npm run dev
 ## Changelog
 
 Newest first. Main / owning changes only.
+
+### 2026-10-05 — ≤1 Gemini call per recovery (anti-429, zero sleep)
+
+- **What:** Strategy planner is rules-only (no Gemini). Comms drafter is the only LLM hop (≤1/call). Instant template fallback on 429 — no backoff sleep. Env `LLM_DRAFT_ENABLED` / `LLM_PROVIDER=rules` for zero LLM. `/health` exposes `llm_calls_per_recovery_max`.
+- **Why it matters:** Free-tier Gemini is ~5 RPM; dual LLM calls flaked mid-demo. Rules stay money-safe and fast; Trace still explains strategy; copy can soft-fail without stalling recovery.
+- **Paths:** `backend/agents/strategy_planner.py`, `backend/agents/comms_drafter.py`, `backend/llm/gemini_client.py`, `backend/config.py`, `backend/main.py`, `backend/graph/recovery_graph.py`, `.env.example`
 
 ### 2026-10-02 — Live console overflow fix (right side clipped)
 

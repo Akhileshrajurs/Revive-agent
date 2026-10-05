@@ -3,11 +3,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import structlog
-import hashlib
-import hmac
-import json
-import os
-from fastapi import Depends, FastAPI, HTTPException, Request, Header
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import func, select
@@ -52,6 +48,14 @@ async def lifespan(_app: FastAPI):
         payment_client=mode,
         llm_provider=settings.llm_provider,
         gemini=settings.gemini_configured,
+        llm_draft_enabled=settings.llm_draft_enabled,
+        llm_calls_per_recovery_max=(
+            1
+            if settings.llm_provider == "gemini"
+            and settings.gemini_configured
+            and settings.llm_draft_enabled
+            else 0
+        ),
         delay_demo_seconds=settings.delay_retry_demo_seconds,
     )
     yield
@@ -91,6 +95,14 @@ async def health():
         "razorpay": "configured" if settings.razorpay_configured else "mock",
         "llm_provider": settings.llm_provider,
         "gemini": "configured" if settings.gemini_configured else "missing",
+        "llm_draft_enabled": settings.llm_draft_enabled,
+        "llm_calls_per_recovery_max": (
+            1
+            if settings.llm_provider == "gemini"
+            and settings.gemini_configured
+            and settings.llm_draft_enabled
+            else 0
+        ),
         "delay_retry_demo_seconds": settings.delay_retry_demo_seconds,
     }
 
@@ -386,7 +398,7 @@ async def recover_from_razorpay(payment_id: str, db: AsyncSession = Depends(get_
         payment_id=payment.get("id", payment_id),
         order_id=payment.get("order_id"),
         customer_id=payment.get("customer_id"),
-        amount_paise=int(payment.get("amount") or 0),
+        amount_paise=int(payment.get("amount") or 0) or 100,
         currency=payment.get("currency") or "INR",
         method=payment.get("method"),
         error_code=payment.get("error_code"),
@@ -399,63 +411,3 @@ async def recover_from_razorpay(payment_id: str, db: AsyncSession = Depends(get_
         contact=payment.get("contact"),
     )
     return await start_recovery(body, db)
-
-@app.post("/api/v1/webhooks/razorpay")
-async def razorpay_webhook(
-    request: Request,
-    x_razorpay_signature: str = Header(None),
-    db: AsyncSession = Depends(get_db),
-):
-    body = await request.body()
-
-    webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")
-
-    if not webhook_secret:
-        raise HTTPException(
-            status_code=500,
-            detail="RAZORPAY_WEBHOOK_SECRET is not configured",
-        )
-
-    expected_signature = hmac.new(
-        webhook_secret.encode(),
-        body,
-        hashlib.sha256,
-    ).hexdigest()
-
-    if not hmac.compare_digest(
-        expected_signature,
-        x_razorpay_signature or "",
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid Razorpay webhook signature",
-        )
-
-    payload = json.loads(body)
-    event = payload.get("event")
-
-    print(f"Razorpay webhook received: {event}")
-
-    if event == "payment.failed":
-        payment = (
-            payload
-            .get("payload", {})
-            .get("payment", {})
-            .get("entity", {})
-        )
-
-        payment_id = payment.get("id")
-
-        print(f"Payment failed: {payment_id}")
-
-        if not payment_id:
-            raise HTTPException(
-                status_code=400,
-                detail="payment.failed webhook missing payment ID",
-            )
-
-        result = await recover_from_razorpay(payment_id, db)
-
-        print(f"ReviveAgent recovery triggered for {payment_id}")
-
-    return {"status": "ok"}

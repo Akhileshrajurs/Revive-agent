@@ -1,13 +1,15 @@
 """Agent 4 — Communication Drafter.
 
-Gemini drafts personalized WhatsApp/SMS/email copy.
-Template fallback if LLM unavailable.
+At most ONE Gemini call per recovery (strategy is rules-only).
+Template fallback on missing key, LLM_DRAFT_ENABLED=false, or any API error (incl. 429).
+Never sleeps / retries — fail open instantly for p99.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from config import get_settings
 from llm.gemini_client import generate_json
 from models.schemas import CustomerPaymentProfile, DraftedMessage, FailureType, StrategyDecision
 
@@ -112,6 +114,7 @@ def draft_communication(
     decision: StrategyDecision,
     profile: CustomerPaymentProfile,
     payment_id: str,
+    use_llm: bool | None = None,
 ) -> DraftedMessage:
     name = customer_name or "there"
     merchant = merchant_name or "the merchant"
@@ -123,6 +126,11 @@ def draft_communication(
         decision=decision,
         payment_id=payment_id,
     )
+
+    settings = get_settings()
+    allow_llm = settings.llm_draft_enabled if use_llm is None else use_llm
+    if not allow_llm or settings.llm_provider == "rules":
+        return fallback
 
     prompt = f"""You are an expert Indian fintech growth copywriter for payment recovery.
 Write a short personalized {decision.channel} message (WhatsApp-style if whatsapp/sms).
@@ -141,6 +149,7 @@ Strategy: {decision.strategy.value}
 Channel: {decision.channel}
 Params: {decision.personalization_params}
 Preferred method: {profile.preferred_method}
+Strategy reasoning (context only — do not invent a new strategy): {decision.reasoning}
 """
     data: dict[str, Any] = generate_json(
         prompt,

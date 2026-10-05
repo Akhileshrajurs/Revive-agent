@@ -145,6 +145,7 @@ def _strategy_planner_node(state: RecoveryState) -> dict[str, Any]:
     started = time.perf_counter()
     classification = FailureClassification.model_validate(state["classification"])
     profile = CustomerPaymentProfile.model_validate(state["customer_profile"])
+    # Rules-only strategy (0 Gemini). Comms may use ≤1 Gemini call for copy.
     decision = plan_strategy(
         failure_type=classification.failure_type,
         profile=profile,
@@ -153,7 +154,7 @@ def _strategy_planner_node(state: RecoveryState) -> dict[str, Any]:
         retry_count=state.get("retry_count") or 0,
         customer_name=state.get("customer_name"),
         strategy_performance=state.get("strategy_performance") or {},
-        use_llm=(int(state.get("retry_count") or 0) == 0),
+        use_llm=False,
     )
     latency_ms = int((time.perf_counter() - started) * 1000)
     return {

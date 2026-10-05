@@ -2,7 +2,9 @@
 
 Rules pick the strategy (deterministic, audit-safe).
 Learned strategy_performance can override when evidence is strong.
-Gemini enriches `reasoning` for the Agent Trace View when available.
+
+No Gemini here — keeps recovery p99 low and avoids burning free-tier RPM.
+Agent Trace still gets crisp rule reasoning; LLM is reserved for copy (Agent 4).
 """
 
 from __future__ import annotations
@@ -10,7 +12,6 @@ from __future__ import annotations
 from typing import Any
 
 from agents.outcome_evaluator import maybe_prefer_learned_strategy
-from llm.gemini_client import generate_json
 from models.schemas import (
     CustomerPaymentProfile,
     FailureType,
@@ -96,9 +97,30 @@ def _rule_reasoning(
     params: dict[str, Any],
     learning_note: str | None,
 ) -> str:
+    why = {
+        RecoveryStrategy.retry_same_method: (
+            "transient auth/rail glitch — same method is still the customer's intent"
+        ),
+        RecoveryStrategy.suggest_alternate_method: (
+            "current rail is blocked/invalid — switch to a working method"
+        ),
+        RecoveryStrategy.offer_emi: (
+            "high ticket with likely liquidity stress — EMI reduces drop-off"
+        ),
+        RecoveryStrategy.offer_partial_payment: (
+            "funds pressure on a recoverable amount — partial keeps the order alive"
+        ),
+        RecoveryStrategy.delay_and_retry: (
+            "bank/netbanking cool-down needed — Celery owns the wait, not the request thread"
+        ),
+        RecoveryStrategy.escalate_to_human: (
+            "repeated failures or unknown class — human review beats another blind retry"
+        ),
+    }.get(strategy, "policy default")
+
     base = (
-        f"Selected {strategy.value} because failure_type={failure_type.value}, "
-        f"risk_tier={profile.risk_tier}, prior_failures_24h={profile.prior_failures_24h}, "
+        f"Rules locked `{strategy.value}` for failure_type={failure_type.value} "
+        f"(risk={profile.risk_tier}, prior_24h={profile.prior_failures_24h}): {why}. "
         f"params={params}."
     )
     if learning_note:
@@ -115,8 +137,14 @@ def plan_strategy(
     retry_count: int = 0,
     customer_name: str | None = None,
     strategy_performance: dict[str, dict[str, Any]] | None = None,
-    use_llm: bool = True,
+    use_llm: bool = False,
 ) -> StrategyDecision:
+    """Pick strategy with rules (+ optional learning override). Never calls Gemini.
+
+    `use_llm` / `customer_name` kept for call-site compatibility; LLM enrichment
+    was removed so each recovery uses at most one Gemini call (comms draft).
+    """
+    _ = (use_llm, customer_name)  # intentional: no LLM on strategy hot path
     strategy, channel, offset, params = _pick_strategy(
         failure_type, profile, amount_paise, payment_method, retry_count
     )
@@ -144,45 +172,7 @@ def plan_strategy(
                 params["wait_hours"] = 4
             params["learning_override"] = True
 
-    base_reasoning = _rule_reasoning(strategy, failure_type, profile, params, learning_note)
-
-    # Replan / hot path: skip Gemini — rules already chose; saves hundreds of ms
-    if not use_llm:
-        return StrategyDecision(
-            strategy=strategy,
-            channel=channel,
-            timing_offset_minutes=offset,
-            personalization_params=params,
-            reasoning=base_reasoning + " (rules-only replan; LLM skipped for latency)",
-        )
-
-    perf_summary = []
-    for k, row in list(perf.items())[:8]:
-        attempts = row.get("attempts") or 0
-        successes = row.get("successes") or 0
-        if attempts:
-            perf_summary.append(f"{k}={successes}/{attempts}")
-
-    prompt = f"""You are a senior payments recovery strategist at an Indian fintech (Razorpay-like).
-Explain in 2-3 crisp sentences WHY this recovery strategy is correct for this failed payment.
-Mention learning data only if relevant. Do not change the strategy.
-Return JSON only: {{"reasoning": "..."}}
-
-Customer: {customer_name or "Customer"}
-Failure type: {failure_type.value}
-Amount paise: {amount_paise}
-Current method: {payment_method}
-Preferred method: {profile.preferred_method}
-Risk tier: {profile.risk_tier}
-Prior failures 24h: {profile.prior_failures_24h}
-Chosen strategy (LOCKED): {strategy.value}
-Channel: {channel}
-Params: {params}
-Learning note: {learning_note or "none"}
-Recent performance: {", ".join(perf_summary) or "insufficient data"}
-"""
-    enriched = generate_json(prompt, fallback={"reasoning": base_reasoning})
-    reasoning = str(enriched.get("reasoning") or base_reasoning)
+    reasoning = _rule_reasoning(strategy, failure_type, profile, params, learning_note)
 
     return StrategyDecision(
         strategy=strategy,

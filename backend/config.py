@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     # gemini | rules | ollama | openai
     llm_provider: str = "gemini"
+    # When false (or provider=rules): zero Gemini calls — templates only. Demo-safe for RPM caps.
+    llm_draft_enabled: bool = True
 
     app_env: str = "development"
     app_debug: bool = True
