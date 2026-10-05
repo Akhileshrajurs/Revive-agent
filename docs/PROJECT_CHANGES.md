@@ -20,10 +20,12 @@ ReviveAgent recovers failed Razorpay payments via a multi-agent loop: **Perceive
 | Persistence | `backend/db/models.py`, `backend/db/database.py` | SQLAlchemy `RecoveryRun`, `StrategyPerformance`; async Postgres session |
 | Graph | `backend/graph/recovery_graph.py` | LangGraph `RecoveryState`; Day-1 classify-only graph (`failure_classifier` → END) |
 | Agents | `backend/agents/` | Classifier, profiler, **rules-only** strategy planner, comms drafter (≤1 Gemini), outcome evaluator |
-| LLM | `backend/llm/gemini_client.py` | Optional draft-only Gemini; instant fallback on 429; `LLM_DRAFT_ENABLED` |
+| Policy | `backend/policy/engine.py` | Deterministic guard: max retries, DNC, quiet hours, permanent-rail no-retry |
+| LLM | `backend/llm/gemini_client.py` | Optional draft-only Gemini; hard timeout; `LLM_DRAFT_ENABLED` |
 | Payments | `backend/razorpay_client/client.py` | Real test-mode client or mock when keys absent |
 | Async work | `backend/tasks/retry_scheduler.py` | Celery/Redis delayed retries (not the sync classify path) |
 | Local sim | `scripts/simulate_failures.py` | Smoke failed-payment events into the API |
+| Evals | `backend/evals/` | Replay + ablation + policy proofs (simulator); `scripts/prove_idempotency.py` for API |
 | Compose | `docker-compose.yml`, `backend/Dockerfile` | Postgres + Redis + API |
 | Frontend | `frontend/src/` | Hire-me scroll landing + live console; `App.tsx` composes sections; Agent Trace is `#trace` |
 
@@ -66,6 +68,24 @@ cd frontend && npm install && npm run dev
 ## Changelog
 
 Newest first. Main / owning changes only.
+
+### 2026-10-05 — Phase 2: policy guard + idempotency + ablation
+
+- **What:** `policy_guard` LangGraph node (retries/DNC/quiet hours/permanent rail). `POST /recoveries` idempotent on `payment_id` (`idempotent_replay`, unique index). Offline `evals/policy_proof.py` + `evals/ablation.py`; API `scripts/prove_idempotency.py`. README rewritten evidence-first.
+- **Why it matters:** Proves Revive can be attacked (spam, DNC, quiet hours, duplicate webhooks) and still behave. Ablation shows which layers move ₹.
+- **Paths:** `backend/policy/`, `backend/graph/recovery_graph.py`, `backend/main.py`, `backend/db/models.py`, `backend/evals/`, `scripts/prove_idempotency.py`, `README.md`
+
+### 2026-10-05 — Phase 1 evals: baseline vs Revive money table
+
+- **What:** Offline harness (`evals/dataset.py`, `baselines.py`, `metrics.py`, `replay.py`) replays a seeded synthetic batch through always-retry, static failure→strategy map, and production Agent 3. Prints recovered ₹ (paise), rate, uplift, strategy mix. Zero HTTP/DB/LLM. Outcomes = Agent 5 simulator.
+- **Why it matters:** Recruiters get measured money evidence instead of “AI recovered more.” Honest limitation: modelled rates, not live Razorpay GMV.
+- **Paths:** `backend/evals/`, `docs/PROJECT_CHANGES.md`
+
+### 2026-10-05 — Fail-fast LLM + default rules (no 60s “Running agents…”)
+
+- **What:** Gemini hard wall-clock (`LLM_TIMEOUT_SECONDS`, default 2.5s) via thread timeout + SDK `request_options`; miss → template. Defaults flipped to `LLM_PROVIDER=rules` / `LLM_DRAFT_ENABLED=false`. Frontend AbortController: POST 12s / GET 8s; play CTA surfaces errors.
+- **Why it matters:** Hung free-tier Gemini left the hire CTA spinning >1 min — unacceptable for a recovery pipeline. Demo path is local-ms; opt-in Gemini cannot stall forever.
+- **Paths:** `backend/llm/gemini_client.py`, `backend/config.py`, `frontend/src/api.ts`, `frontend/src/App.tsx`, `.env.example`
 
 ### 2026-10-05 — ≤1 Gemini call per recovery (anti-429, zero sleep)
 

@@ -32,7 +32,7 @@ frontend/.vite/
 .idea/
 *.swp
 .vscode/
-!.cursor/rules/
+.cursor/rules/
 
 # Docker volumes / logs
 *.log

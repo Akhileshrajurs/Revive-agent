@@ -45,7 +45,8 @@ class RecoveryRun(Base):
     __tablename__ = "recovery_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    payment_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    # One recovery run per payment_id — duplicate webhooks must not double-act
+    payment_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     customer_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)

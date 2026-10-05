@@ -5,6 +5,7 @@ from uuid import UUID
 import structlog
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,6 +50,7 @@ async def lifespan(_app: FastAPI):
         llm_provider=settings.llm_provider,
         gemini=settings.gemini_configured,
         llm_draft_enabled=settings.llm_draft_enabled,
+        llm_timeout_seconds=settings.llm_timeout_seconds,
         llm_calls_per_recovery_max=(
             1
             if settings.llm_provider == "gemini"
@@ -84,7 +86,7 @@ async def root():
         "docs": "/docs",
         "health": "/health",
         "version": "0.4.0",
-        "loop": ["classify", "profile", "plan", "draft", "evaluate|schedule"],
+        "loop": ["classify", "profile", "plan", "policy", "draft", "evaluate|schedule"],
     }
 
 
@@ -96,6 +98,7 @@ async def health():
         "llm_provider": settings.llm_provider,
         "gemini": "configured" if settings.gemini_configured else "missing",
         "llm_draft_enabled": settings.llm_draft_enabled,
+        "llm_timeout_seconds": settings.llm_timeout_seconds,
         "llm_calls_per_recovery_max": (
             1
             if settings.llm_provider == "gemini"
@@ -159,9 +162,83 @@ def _countdown_seconds(decision: StrategyDecision) -> int:
     return max(60, int(decision.timing_offset_minutes or 0) * 60)
 
 
+def _classify_response_from_run(run: RecoveryRun, *, idempotent: bool) -> ClassifyResponse:
+    from models.schemas import FailureType as SchemaFailureType
+
+    steps = (run.agent_trace or {}).get("steps") or []
+    ft = (
+        SchemaFailureType(run.failure_type.value)
+        if run.failure_type is not None
+        else SchemaFailureType.unknown
+    )
+    classification = FailureClassification(
+        failure_type=ft,
+        confidence=float(run.failure_confidence or 0.0),
+        raw_error_code=run.raw_error_code,
+        payment_method=run.payment_method,
+        reasoning="Idempotent replay — existing recovery run returned.",
+    )
+    profile = (
+        CustomerPaymentProfile.model_validate(run.customer_profile)
+        if run.customer_profile
+        else None
+    )
+    decision = (
+        StrategyDecision.model_validate(run.strategy_decision)
+        if run.strategy_decision
+        else None
+    )
+    draft = (
+        DraftedMessage.model_validate(run.drafted_message) if run.drafted_message else None
+    )
+    outcome = None
+    if run.outcome:
+        try:
+            outcome = RecoveryOutcome.model_validate(
+                {
+                    "success": bool(run.outcome.get("success")),
+                    "method_used": run.outcome.get("method_used"),
+                    "time_to_recovery_seconds": run.outcome.get("time_to_recovery_seconds"),
+                    "strategy_used": run.outcome.get("strategy_used") or (
+                        run.strategy.value if run.strategy else None
+                    ),
+                    "modelled_success_rate": run.outcome.get("modelled_success_rate"),
+                }
+            )
+        except Exception:
+            outcome = None
+    return ClassifyResponse(
+        run_id=run.id,
+        payment_id=run.payment_id,
+        classification=classification,
+        status=RecoveryStatus(run.status.value),
+        customer_profile=profile,
+        strategy_decision=decision,
+        drafted_message=draft,
+        outcome=outcome,
+        agent_trace=[AgentTraceStep.model_validate(s) for s in steps if isinstance(s, dict)],
+        idempotent_replay=idempotent,
+    )
+
+
 @app.post("/api/v1/recoveries", response_model=ClassifyResponse)
 async def start_recovery(body: FailedPaymentIn, db: AsyncSession = Depends(get_db)):
-    """Full loop: classify → profile → plan → draft → evaluate or schedule delay."""
+    """Full loop: classify → profile → plan → policy → draft → evaluate or schedule.
+
+    Idempotent on `payment_id`: duplicate POSTs/webhooks return the existing run
+    without re-running the pipeline or scheduling a second Celery task.
+    """
+    existing = (
+        await db.execute(select(RecoveryRun).where(RecoveryRun.payment_id == body.payment_id))
+    ).scalar_one_or_none()
+    if existing is not None:
+        log.info(
+            "recovery_idempotent_hit",
+            payment_id=body.payment_id,
+            run_id=str(existing.id),
+        )
+        return _classify_response_from_run(existing, idempotent=True)
+
     prior = await _prior_failures_24h(db, body.customer_id)
     perf = await _load_strategy_performance(db)
     payload = body.model_dump()
@@ -232,7 +309,22 @@ async def start_recovery(body: FailedPaymentIn, db: AsyncSession = Depends(get_d
         outcome=outcome_blob,
     )
     db.add(run)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Race: another request inserted the same payment_id
+        await db.rollback()
+        raced = (
+            await db.execute(select(RecoveryRun).where(RecoveryRun.payment_id == body.payment_id))
+        ).scalar_one_or_none()
+        if raced is None:
+            raise
+        log.info(
+            "recovery_idempotent_race",
+            payment_id=body.payment_id,
+            run_id=str(raced.id),
+        )
+        return _classify_response_from_run(raced, idempotent=True)
 
     if deferred:
         try:
@@ -307,6 +399,7 @@ async def start_recovery(body: FailedPaymentIn, db: AsyncSession = Depends(get_d
             AgentTraceStep.model_validate(s)
             for s in (run.agent_trace or {}).get("steps", steps)
         ],
+        idempotent_replay=False,
     )
 
 

@@ -19,12 +19,14 @@ from agents.customer_profiler import build_customer_profile
 from agents.failure_classifier import classify_failure
 from agents.outcome_evaluator import evaluate_outcome, expected_success_rate, outcome_reasoning
 from agents.strategy_planner import plan_strategy
+from config import get_settings
 from models.schemas import (
     CustomerPaymentProfile,
     FailureClassification,
     RecoveryStrategy,
     StrategyDecision,
 )
+from policy.engine import PolicyContext, apply_policy
 
 BranchName = Literal[
     "path_retry",
@@ -161,6 +163,39 @@ def _strategy_planner_node(state: RecoveryState) -> dict[str, Any]:
         "strategy_decision": decision.model_dump(),
         "agent_trace": _append_trace(
             state, "strategy_planner", decision.model_dump(), decision.reasoning, latency_ms
+        ),
+    }
+
+
+def _policy_guard_node(state: RecoveryState) -> dict[str, Any]:
+    """Deterministic guardrails after plan — LLM/rules cannot bypass."""
+    started = time.perf_counter()
+    settings = get_settings()
+    classification = FailureClassification.model_validate(state["classification"])
+    decision = StrategyDecision.model_validate(state["strategy_decision"])
+    verdict = apply_policy(
+        decision,
+        PolicyContext(
+            failure_type=classification.failure_type,
+            strategy=decision.strategy,
+            retry_count=int(state.get("retry_count") or 0),
+            prior_failures_24h=int(state.get("prior_failures_24h") or 0),
+            customer_id=state.get("customer_id"),
+            dnc_customer_ids=settings.dnc_customer_id_set,
+            max_retries=int(state.get("max_retries") or settings.policy_max_retries),
+            quiet_hours_start=settings.policy_quiet_hours_start,
+            quiet_hours_end=settings.policy_quiet_hours_end,
+        ),
+    )
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    return {
+        "strategy_decision": verdict.decision.model_dump(),
+        "agent_trace": _append_trace(
+            state,
+            "policy_guard",
+            verdict.as_trace_output(),
+            verdict.reason,
+            latency_ms,
         ),
     }
 
@@ -313,6 +348,7 @@ def build_recovery_graph():
     graph.add_node("failure_classifier", _failure_classifier_node)
     graph.add_node("customer_profiler", _customer_profiler_node)
     graph.add_node("strategy_planner", _strategy_planner_node)
+    graph.add_node("policy_guard", _policy_guard_node)
     for branch in _STRATEGY_TO_BRANCH.values():
         graph.add_node(branch, _make_branch_node(branch))
     graph.add_node("comms_drafter", _comms_drafter_node)
@@ -323,9 +359,10 @@ def build_recovery_graph():
     graph.set_entry_point("failure_classifier")
     graph.add_edge("failure_classifier", "customer_profiler")
     graph.add_edge("customer_profiler", "strategy_planner")
+    graph.add_edge("strategy_planner", "policy_guard")
 
     graph.add_conditional_edges(
-        "strategy_planner",
+        "policy_guard",
         _route_after_strategy,
         {
             "path_retry": "path_retry",

@@ -25,14 +25,27 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.8-flash"
     openai_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
-    # gemini | rules | ollama | openai
-    llm_provider: str = "gemini"
-    # When false (or provider=rules): zero Gemini calls — templates only. Demo-safe for RPM caps.
-    llm_draft_enabled: bool = True
+    # gemini | rules | ollama | openai — use `rules` for zero LLM latency on demos
+    llm_provider: str = "rules"
+    # Opt-in Gemini drafts. Default off so recovery never waits on a hung LLM.
+    llm_draft_enabled: bool = False
+    # Hard wall-clock for Gemini; miss → template instantly (no backoff sleep).
+    llm_timeout_seconds: float = 2.5
+
+    # Policy guard (deterministic — never LLM-authorized)
+    policy_max_retries: int = 3
+    policy_quiet_hours_start: int = 22  # IST inclusive
+    policy_quiet_hours_end: int = 8  # IST exclusive
+    # Comma-separated customer_ids that must never receive recovery outbound
+    policy_dnc_customer_ids: str = ""
 
     app_env: str = "development"
     app_debug: bool = True
     cors_origins: str = "http://localhost:6100,http://localhost:6000,http://localhost:5173,http://localhost:3000"
+
+    @property
+    def dnc_customer_id_set(self) -> frozenset[str]:
+        return frozenset(x.strip() for x in self.policy_dnc_customer_ids.split(",") if x.strip())
 
     @property
     def cors_origin_list(self) -> list[str]:

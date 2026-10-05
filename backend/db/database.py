@@ -43,9 +43,33 @@ async def _ensure_scheduled_enum(conn) -> None:
     )
 
 
+async def _ensure_payment_id_unique(conn) -> None:
+    """Best-effort unique index for existing DBs (skips if duplicates already exist)."""
+    await conn.execute(
+        text(
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes WHERE indexname = 'uq_recovery_runs_payment_id'
+              ) THEN
+                BEGIN
+                  CREATE UNIQUE INDEX uq_recovery_runs_payment_id ON recovery_runs (payment_id);
+                EXCEPTION WHEN unique_violation THEN
+                  RAISE NOTICE 'uq_recovery_runs_payment_id skipped — duplicate payment_ids exist';
+                END;
+              END IF;
+            END
+            $$;
+            """
+        )
+    )
+
+
 async def init_db() -> None:
     from db import models  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_scheduled_enum(conn)
+        await _ensure_payment_id_unique(conn)

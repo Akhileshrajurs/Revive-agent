@@ -141,6 +141,8 @@ class ClassifyResponse(BaseModel):
     drafted_message: DraftedMessage | None = None
     outcome: RecoveryOutcome | None = None
     agent_trace: list[AgentTraceStep] = Field(default_factory=list)
+    # True when this payment_id already had a run — no second pipeline / side effects
+    idempotent_replay: bool = False
 
 
 class StrategyPerformanceOut(BaseModel):
