@@ -1,5 +1,9 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:9000";
 
+/** Recovery POST must stay snappy — never leave "Running agents…" spinning. */
+const POST_TIMEOUT_MS = 12_000;
+const GET_TIMEOUT_MS = 8_000;
+
 export type RecoveryRun = {
   id: string;
   payment_id: string;
@@ -80,18 +84,41 @@ export type CreateRecoveryResponse = {
   agent_trace: TraceStep[];
 };
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`timeout after ${timeoutMs}ms — ${url.replace(API_BASE, "")}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetchWithTimeout(`${API_BASE}${path}`, undefined, GET_TIMEOUT_MS);
   if (!res.ok) throw new Error(`${res.status} ${path}`);
   return res.json() as Promise<T>;
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await fetchWithTimeout(
+    `${API_BASE}${path}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    POST_TIMEOUT_MS,
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`${res.status} ${path}${text ? `: ${text.slice(0, 180)}` : ""}`);

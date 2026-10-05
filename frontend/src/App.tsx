@@ -98,6 +98,10 @@ export default function App() {
         requestAnimationFrame(() => {
           document.getElementById("trace")?.scrollIntoView({ behavior: "smooth", block: "start" });
         });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Recovery request failed";
+        setError(msg);
+        setJustRan(null);
       } finally {
         setDemoRunning(false);
       }

@@ -7,6 +7,7 @@ const AGENT_LABEL: Record<string, string> = {
   failure_classifier: "1 · Failure Classifier",
   customer_profiler: "2 · Customer Profiler",
   strategy_planner: "3 · Strategy Planner",
+  policy_guard: "🛡 · Policy Guard",
   graph_branch: "⑂ · LangGraph Branch",
   comms_drafter: "4 · Communication Drafter",
   outcome_evaluator: "5 · Outcome Evaluator",
