@@ -12,7 +12,7 @@ Given a `payment.failed` event (webhook or API), ReviveAgent classifies the fail
 
 ## Contents
 
-[The problem](#the-problem) · [Why this is not “LLM + eval”](#why-this-is-not-llm--eval) · [Key capabilities](#key-capabilities) · [Architecture](#architecture) · [Measured results](#measured-results) · [What broke](#what-broke-and-how-we-got-out) · [Tech stack](#tech-stack) · [API](#api) · [Local setup](#local-setup) · [Project structure](#project-structure) · [Limitations](#limitations--prototype-scope) · [Decisions](docs/DECISIONS.md)
+[The problem](#the-problem) · [Why this is not “LLM + eval”](#why-this-is-not-llm--eval) · [Key capabilities](#key-capabilities) · [Architecture](#architecture) · [Measured results](#measured-results) · [What broke](#what-broke-and-how-we-got-out) · [Tech stack](#tech-stack) · [API](#api) · [Local setup](#local-setup) · [Project structure](#project-structure) · [Limitations](#limitations--prototype-scope)
 
 ---
 
@@ -176,7 +176,7 @@ python3 scripts/prove_webhook.py http://localhost:9000                   # 401 t
 | Demo “always escalate” | Insufficient funds → human | Same `customer_id` hammered → `prior_failures_24h ≥ 3` | Guardrail working as designed (not a classifier bug) |
 | Live console clipped | Funnel/strategy off-screen | CSS grid overflow | `minmax(0,fr)` + table ellipsis |
 
-Full rationale: [`docs/DECISIONS.md`](docs/DECISIONS.md).
+Full rationale lives in the incident table above and in `backend/evals/` (reproduce commands).
 
 ---
 

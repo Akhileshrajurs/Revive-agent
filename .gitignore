@@ -34,6 +34,9 @@ frontend/.vite/
 .vscode/
 .cursor/
 
+# Local notes (not published)
+docs/
+
 # Docker volumes / logs
 *.log
 postgres_data/
