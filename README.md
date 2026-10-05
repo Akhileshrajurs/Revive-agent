@@ -20,8 +20,10 @@ Reproduce anytime:
 docker compose run --rm --no-deps api python -m evals.replay --n 2000 --seed 42
 docker compose run --rm --no-deps api python -m evals.ablation --n 2000 --seed 42
 docker compose run --rm --no-deps api python -m evals.policy_proof
+docker compose run --rm --no-deps api python -m evals.cost_latency --n 200 --seed 42
 # API must be up:
 python3 scripts/prove_idempotency.py http://localhost:9000
+python3 scripts/prove_webhook.py http://localhost:9000
 ```
 
 ### Money table (Phase 1) — seed `42`, N=`2000`
@@ -50,6 +52,24 @@ docker compose run --rm --no-deps api python -m evals.ablation --n 2000 --seed 4
 | **revive** | **₹3,460,643** | **52.9%** | + policy (daytime batch; compliance ≠ ₹ crush) |
 
 **Reading:** learning is the main ₹ lift after rules. Policy is for safety (retries/DNC/quiet/permanent) — on this midday batch with no DNC ids it does not steal recovery.
+
+### Cost + latency (decision path)
+
+```bash
+docker compose run --rm --no-deps api python -m evals.cost_latency --n 200 --seed 42
+```
+
+Default hire-demo config (`LLM_PROVIDER=rules`, drafts off):
+
+| Metric | Value |
+|--------|-------|
+| Gemini calls / recovery | **0** |
+| LLM ₹ / recovery | **₹0.00** |
+| Legacy (2 Gemini calls) | ₹0.10 illustrative |
+| Cost reduction vs legacy | **100%** on the hot path |
+| Decision-path p50 / p95 / p99 | **0.021 / 0.024 / 0.034 ms** (N=200, seed 42, offline) |
+
+Engineering rationale: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ### Guardrails (Phase 2)
 
@@ -175,6 +195,7 @@ Env knobs that matter:
 - **Idempotent `payment_id`** — duplicate webhooks must not double-act.
 - **Synthetic eval data** — Razorpay prod dumps unavailable; we label the simulator.
 
+See [`docs/DECISIONS.md`](docs/DECISIONS.md) for why rules > LLM on strategy, why policy exists, and what broke.
 See `docs/PROJECT_CHANGES.md` for the living codebase map.
 
 ---

@@ -69,6 +69,12 @@ cd frontend && npm install && npm run dev
 
 Newest first. Main / owning changes only.
 
+### 2026-10-06 — Cost/latency eval + DECISIONS.md; drop Cursor rules from git
+
+- **What:** `evals/cost_latency.py` (₹0 LLM on rules path, p50/p95). `docs/DECISIONS.md` for reviewer rationale. README evidence section updated. `.cursor/` removed from git tracking / gitignored (local craft only).
+- **Why it matters:** Hire packet shows cost judgment like MerchantShield’s metrics culture, without fake ML. Public GitHub stays product-focused.
+- **Paths:** `backend/evals/cost_latency.py`, `docs/DECISIONS.md`, `README.md`, `.gitignore`
+
 ### 2026-10-06 — Razorpay `payment.failed` webhook restored (HMAC + idempotent)
 
 - **What:** `POST /api/v1/webhooks/razorpay` verifies `X-Razorpay-Signature`, handles `payment.failed`, maps entity → `FailedPaymentIn` (no invented amounts), runs recovery (idempotent on `payment_id`), prepends `webhook_ingest` Trace step. Shared mapper used by `/from-razorpay/{id}`. Proof script `scripts/prove_webhook.py`.

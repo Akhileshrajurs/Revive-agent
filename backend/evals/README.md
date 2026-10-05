@@ -32,6 +32,14 @@ docker compose run --rm --no-deps api python -m evals.policy_proof
 
 Expect `6/6 passed`.
 
+## Cost + latency
+
+```bash
+docker compose run --rm --no-deps api python -m evals.cost_latency --n 200 --seed 42
+```
+
+Rules-default → 0 Gemini calls, ₹0 LLM on the decision path.
+
 ## Phase 2 — idempotency (API)
 
 ```bash
