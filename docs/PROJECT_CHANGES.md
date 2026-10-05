@@ -69,6 +69,12 @@ cd frontend && npm install && npm run dev
 
 Newest first. Main / owning changes only.
 
+### 2026-10-06 — README: MerchantShield-style technical writeup
+
+- **What:** Full README rewrite — problem, “not LLM+eval”, capabilities, architecture, measured tables, incidents/fixes, limitations, stack/API/setup.
+- **Why it matters:** Reviewers get honesty + proof + differentiation in one scroll.
+- **Paths:** `README.md`
+
 ### 2026-10-06 — Cost/latency eval + DECISIONS.md; drop Cursor rules from git
 
 - **What:** `evals/cost_latency.py` (₹0 LLM on rules path, p50/p95). `docs/DECISIONS.md` for reviewer rationale. README evidence section updated. `.cursor/` removed from git tracking / gitignored (local craft only).
