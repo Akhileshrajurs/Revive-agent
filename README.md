@@ -12,7 +12,7 @@ Given a `payment.failed` event (webhook or API), ReviveAgent classifies the fail
 
 ## Contents
 
-[The problem](#the-problem) · [Why this is not “LLM + eval”](#why-this-is-not-llm--eval) · [Key capabilities](#key-capabilities) · [Architecture](#architecture) · [Measured results](#measured-results) · [What broke](#what-broke-and-how-we-got-out) · [Tech stack](#tech-stack) · [API](#api) · [Local setup](#local-setup) · [Project structure](#project-structure) · [Limitations](#limitations--prototype-scope)
+[The problem](#the-problem) · [Why this is not “LLM + eval”](#why-this-is-not-llm--eval) · [Key capabilities](#key-capabilities) · [Architecture](#architecture) · [Measured results](#measured-results) · [What broke](#what-broke-and-how-we-got-out) · [Tech stack](#tech-stack) · [API](#api) · [Local setup](#local-setup) · [Project structure](#project-structure) · [Limitations](#limitations--prototype-scope) · [Scale docs](#scale-docs)
 
 ---
 
@@ -104,6 +104,13 @@ idempotency (payment_id unique)
 ```
 
 Three independently auditable layers: **propose** (planner) → **authorize** (policy) → **explain** (Trace). Changing copy generation cannot silently change the recovery strategy.
+
+### Scale docs
+
+| Doc | Audience | Contents |
+|-----|----------|----------|
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Merchant-scale | Sequence diagram, component map, SLO notes |
+| [`RUNBOOK.md`](./RUNBOOK.md) | Razorpay-scale | Webhook → queue → partitioned workers → Trace export |
 
 ---
 
@@ -247,6 +254,8 @@ revive_Agent/
 │   └── main.py           # FastAPI
 ├── frontend/             # dashboard + Live Console / Agent Trace
 ├── scripts/              # simulate_failures, prove_idempotency, prove_webhook
+├── ARCHITECTURE.md       # merchant-scale sequence + SLOs
+├── RUNBOOK.md            # webhook → queue → worker → Trace
 └── README.md
 ```
 
