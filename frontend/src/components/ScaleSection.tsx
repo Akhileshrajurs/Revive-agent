@@ -31,8 +31,8 @@ export function ScaleSection() {
             <em> Ambitious about the path.</em>
           </h2>
           <p className="chapter-lead">
-            Local Docker is not billions of txns. Hover a tier — this is how an AI Builder would grow
-            Track 3 recovery from demo → merchant → India-scale traffic.
+            Local Docker is not production volume. Hover a tier — how this recovery loop would scale
+            from demo → merchant load → India peak traffic, without rewriting the agents.
           </p>
         </motion.div>
 

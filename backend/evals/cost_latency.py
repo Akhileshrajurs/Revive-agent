@@ -129,7 +129,7 @@ def main() -> None:
     print(f"Batch LLM cost @ N={args.n}: this ₹{cost_per * args.n:.2f}  |  legacy ₹{legacy_cost * args.n:.2f}")
     print()
     print("Notes")
-    print("  • Default hire-demo path is rules-only → ₹0 Gemini, 0 network LLM RTT.")
+    print("  • Default demo path is rules-only → ₹0 Gemini, 0 network LLM RTT.")
     print("  • ₹/call is illustrative for README math — not a Google invoice.")
     print("  • Request-path never sleeps on 429; drafts fail open to templates.")
     print()

@@ -82,7 +82,7 @@ export function LiveConsole({
         <div className="console-grid" id="trace">
           <article className="panel panel-trace">
             <h3>Agent Trace</h3>
-            <p className="sub">Every LangGraph node · latency · reasoning — the callback view</p>
+            <p className="sub">Every LangGraph node · latency · reasoning</p>
             <AgentTrace runId={selectedId} />
           </article>
 

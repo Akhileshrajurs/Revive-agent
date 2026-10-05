@@ -58,7 +58,7 @@ ReviveAgent separates concerns the way a payments engineer would: **rules decide
 - **Cost-aware LLM use** — default `LLM_PROVIDER=rules` → **0 Gemini calls**; optional draft with **2.5s hard timeout**, fail-open to templates  
 - **Agent Trace** — every node’s I/O + reasoning (including `webhook_ingest` and `policy_guard`)  
 - **Offline evidence suite** — replay, ablation, policy attacks, cost/latency (`backend/evals/`)  
-- **Hire dashboard** — Live feed, funnel, Trace, strategy performance (Vercel → Render)
+- **Merchant dashboard** — Live feed, funnel, Trace, strategy performance (Vercel → Render)
 
 ---
 
@@ -245,7 +245,7 @@ revive_Agent/
 │   ├── tasks/            # Celery delay worker
 │   ├── db/               # RecoveryRun, StrategyPerformance
 │   └── main.py           # FastAPI
-├── frontend/             # hire dashboard + Live Console / Trace
+├── frontend/             # dashboard + Live Console / Agent Trace
 ├── scripts/              # simulate_failures, prove_idempotency, prove_webhook
 └── README.md
 ```
@@ -257,15 +257,15 @@ revive_Agent/
 - **Simulator ≠ GMV.** Offline recovered ₹ uses Agent 5 modelled rates. Do not cite as production revenue.  
 - **Test Mode only.** Live keys / live charges are out of scope for this demo.  
 - **No outbound WA/SMS provider.** Drafter produces copy + CTA URL; no BSP send receipts yet.  
-- **No auth on the dashboard.** Fine for a public hire demo; not multi-tenant production.  
+- **No auth on the dashboard.** Acceptable for a public demo; not multi-tenant production.  
 - **Celery cool-down is demo-short** (`DELAY_RETRY_DEMO_SECONDS`, default 30s) vs production minute-scale bank windows.  
 - **Not a fraud model.** No LightGBM/SHAP claim; policy is rule-based authorization, not SHAP additivity.  
 - **Cold / repeated demo customers escalate** by design after ≥3 failures / 24h.
 
 ---
 
-## Why a Razorpay engineer might care
+## Intended audience
 
-Merchants still recover checkout failures by hand. ReviveAgent is the system you’d put **next to** Checkout volume: structured decisions, policy boundaries, idempotent webhook ingest, async delay, a learning loop, and an Agent Trace you can open in an interview without hand-waving.
+ReviveAgent targets Razorpay’s revenue-recovery problem: merchants still handle many checkout failures with manual outreach and weak feedback loops.
 
-We did not assume the agent was better. We measured it against dumb baselines, attacked our own guardrails, cut LLM cost to zero on the hot path when it hurt us, and kept the limitations in the README on purpose.
+This repository demonstrates a production-shaped approach — structured decisions, policy enforcement, idempotent webhook ingest, asynchronous delay, a learning loop, and an inspectable agent trace — with measured offline baselines and an explicit prototype boundary.

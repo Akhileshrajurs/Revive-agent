@@ -89,7 +89,7 @@ export function SiteFooter({ onSeeItHappen, running }: Props) {
           <a href="#trace">Trace</a>
         </div>
         <p className="footer-copy">
-          © {year} · Built to impress AI Builder hiring — not to fake $180B volume.
+          © {year} · ReviveAgent — payment failure recovery demo (Razorpay Test Mode)
         </p>
       </div>
     </footer>

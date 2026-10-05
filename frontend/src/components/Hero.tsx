@@ -11,7 +11,7 @@ export function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          Track 3 · Revenue recovery · Built for Razorpay AI Builders
+          Track 3 · Revenue recovery · Razorpay Test Mode
         </motion.p>
         <motion.h1
           className="hero-title"

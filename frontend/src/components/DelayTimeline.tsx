@@ -24,7 +24,7 @@ export function DelayTimeline() {
           </h2>
           <p className="chapter-lead">
             <code>delay_and_retry</code> skips immediate scoring and hands off to Celery + Redis.
-            Hover each beat — that&apos;s the hire-signal difference between a demo sleep and a production queue.
+            Hover each beat — cool-down belongs on a worker queue, not a request-thread sleep.
           </p>
         </motion.div>
 
