@@ -247,8 +247,7 @@ revive_Agent/
 │   └── main.py           # FastAPI
 ├── frontend/             # hire dashboard + Live Console / Trace
 ├── scripts/              # simulate_failures, prove_idempotency, prove_webhook
-├── docs/DECISIONS.md
-└── docs/PROJECT_CHANGES.md
+└── README.md
 ```
 
 ---
